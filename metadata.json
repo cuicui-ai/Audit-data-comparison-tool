@@ -1,6 +1,6 @@
 {
-  "name": "",
-  "description": "",
+  "name": "审计报告核对工具",
+  "description": "智能比对财务报表与审计说明的一致性，支持Word审计报告与Excel报表数据的智能提取与自动核对。",
   "requestFramePermissions": [],
   "majorCapabilities": []
 }
