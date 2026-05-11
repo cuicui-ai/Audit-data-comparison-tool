@@ -64,6 +64,7 @@ const REQUIRED_EXCELS: { key: FileType; label: string }[] = [
   { key: 'profit', label: '利润表' },
   { key: 'balance', label: '资产负债表' },
   { key: 'trial_balance', label: '余额表' },
+  { key: 'shareholder_info', label: '持有人历史份额信息' },
 ];
 
 interface BatchProduct {
@@ -82,9 +83,18 @@ interface HistoryItem {
   excelFiles: string[];
   status: '正常' | '有差异';
   diffCount: number;
+  details?: { field: string; message: string; severity: 'warning' | 'error' }[];
+  versions?: { 
+    id: string; 
+    time: string; 
+    mainFile: string; 
+    excelFiles: string[];
+    status: '正常' | '有差异';
+    diffCount: number;
+  }[];
 }
 
-const MOCK_HISTORY = [
+const MOCK_HISTORY: HistoryItem[] = [
   {
     id: 'H001',
     productName: '某量化策略1号全周期进取型资产管理计划',
@@ -92,7 +102,16 @@ const MOCK_HISTORY = [
     mainFile: '2025年度审计报告_最终版.docx',
     excelFiles: ['余额表.xlsx', '净资产变动表.xlsx', '利润表.xlsx'],
     status: '有差异',
-    diffCount: 3
+    diffCount: 3,
+    details: [
+      { field: '银行存款', message: '审计报告值 3,115,498.20 与余额表不符', severity: 'error' },
+      { field: '管理费', message: '计提比例计算结果与报告描述存在 0.01% 差异', severity: 'warning' },
+      { field: '净资产', message: '期末余额勾稽关系不平', severity: 'error' }
+    ],
+    versions: [
+      { id: 'V1', time: '2026-05-07 10:22', mainFile: '2025年度审计报告_最终版.docx', excelFiles: ['余额表.xlsx', '利润表.xlsx'], status: '有差异', diffCount: 3 },
+      { id: 'V2', time: '2026-05-05 14:10', mainFile: '2025年度审计报告_初稿.docx', excelFiles: ['余额表.xlsx'], status: '有差异', diffCount: 5 }
+    ]
   },
   {
     id: 'H002',
@@ -101,7 +120,11 @@ const MOCK_HISTORY = [
     mainFile: '2025年度审计报告.docx',
     excelFiles: ['余额表.xlsx', '利润表.xlsx'],
     status: '正常',
-    diffCount: 0
+    diffCount: 0,
+    details: [],
+    versions: [
+      { id: 'V1', time: '2026-05-06 15:45', mainFile: '2025年度审计报告.docx', excelFiles: ['余额表.xlsx', '利润表.xlsx'], status: '正常', diffCount: 0 }
+    ]
   },
   {
     id: 'H003',
@@ -110,7 +133,14 @@ const MOCK_HISTORY = [
     mainFile: '审计报告（初稿）.docx',
     excelFiles: ['余额表.xlsx'],
     status: '有差异',
-    diffCount: 12
+    diffCount: 12,
+    details: [
+      { field: '持有人份额', message: '12-31 份额数据与全局信息表完全不匹配', severity: 'error' }
+    ],
+    versions: [
+      { id: 'V1', time: '2026-05-05 09:12', mainFile: '审计报告（初稿）.docx', excelFiles: ['余额表.xlsx'], status: '有差异', diffCount: 12 },
+      { id: 'V2', time: '2026-04-28 16:30', mainFile: '审计报告（初稿v1）.docx', excelFiles: ['余额表.xlsx'], status: '有差异', diffCount: 8 }
+    ]
   }
 ];
 
@@ -152,6 +182,7 @@ export default function App() {
   const [view, setView] = useState<'upload' | 'comparison' | 'history'>('upload');
   const [activeTab, setActiveTab] = useState<string>('net_assets');
   const [wordHtml, setWordHtml] = useState<string>('');
+  const [versionHistoryItem, setVersionHistoryItem] = useState<HistoryItem | null>(null);
 
   // --- Demo Data Support ---
   const loadDemoData = () => {
@@ -531,6 +562,129 @@ export default function App() {
           </motion.div>
         )}
       </AnimatePresence>
+      
+      {/* Historical Versions Modal */}
+      <AnimatePresence>
+        {versionHistoryItem && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md"
+            onClick={() => setVersionHistoryItem(null)}
+          >
+            <motion.div 
+              initial={{ scale: 0.95, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.95, y: 20 }}
+              className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-primary/10 rounded-xl">
+                    <History className="w-6 h-6 text-primary" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-slate-800">{versionHistoryItem.productName}</h3>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">全量历史核对记录</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setVersionHistoryItem(null)}
+                  className="p-2 hover:bg-white hover:shadow-sm rounded-xl transition-all"
+                >
+                  <AlertCircle className="w-5 h-5 text-slate-400 rotate-45" />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-auto p-6 space-y-6">
+                {versionHistoryItem.versions?.map((version, idx) => (
+                  <div key={version.id} className="relative pl-8 pb-4">
+                    {/* Timeline Line */}
+                    {idx !== (versionHistoryItem.versions?.length || 0) - 1 && (
+                      <div className="absolute left-3.5 top-8 bottom-0 w-px bg-slate-100" />
+                    )}
+                    
+                    {/* Timeline Dot */}
+                    <div className={cn(
+                      "absolute left-1.5 top-2 w-4 h-4 rounded-full border-2",
+                      idx === 0 ? "bg-primary border-white ring-4 ring-red-50" : "bg-white border-slate-300"
+                    )} />
+
+                    <div className={cn(
+                      "p-4 rounded-2xl border transition-all relative overflow-hidden",
+                      idx === 0 ? "bg-white border-primary/20 shadow-lg ring-1 ring-primary/5" : "bg-slate-50 border-slate-100 opacity-70 hover:opacity-100"
+                    )}>
+                      {idx === 0 && (
+                        <div className="absolute top-0 right-0 px-3 py-1 bg-primary text-white text-[10px] font-bold rounded-bl-xl">
+                          最新版本
+                        </div>
+                      )}
+                      
+                      <div className="flex items-start justify-between gap-4 mb-3">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-black text-slate-800">{version.time}</span>
+                            <div className={cn(
+                              "px-2 py-0.5 rounded-full text-[10px] font-bold",
+                              version.status === '正常' ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
+                            )}>
+                              {version.status === '正常' ? '核对无误' : `存疑 (${version.diffCount})`}
+                            </div>
+                          </div>
+                          <div className="space-y-1.5 pt-1">
+                            <div className="flex items-center gap-2 text-sm text-slate-700 font-bold">
+                              <FileText className="w-4 h-4 text-primary" />
+                              {version.mainFile}
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              {version.excelFiles.map((ef, i) => (
+                                <div key={i} className="flex items-center gap-1 bg-white px-2 py-0.5 rounded border border-slate-200 text-[10px] text-slate-500 shadow-sm">
+                                  <FileSpreadsheet className="w-3 h-3 text-green-500" />
+                                  {ef}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex flex-col gap-2">
+                          <button 
+                            className="p-2 bg-white text-primary border border-slate-200 hover:border-primary/40 hover:bg-red-50 rounded-xl shadow-sm transition-all" 
+                            title="下载本版本合集 (ZIP)"
+                            onClick={() => alert('正在准备文件下载...')}
+                          >
+                            <Upload className="w-5 h-5 rotate-180" />
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-3">
+                        <button className="text-[10px] font-bold px-3 py-1 bg-slate-100 text-slate-600 rounded-md hover:bg-slate-200 transition-colors">
+                          重载比对数据
+                        </button>
+                        <button className="text-[10px] font-bold px-3 py-1 bg-slate-100 text-slate-600 rounded-md hover:bg-slate-200 transition-colors">
+                          查看差异汇总
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              
+              <div className="p-6 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
+                <p className="text-xs text-slate-400 font-medium">共计 {versionHistoryItem.versions?.length || 0} 个历史版本</p>
+                <button 
+                  onClick={() => setVersionHistoryItem(null)}
+                  className="px-6 py-2 bg-white border border-slate-200 text-slate-600 rounded-xl text-sm font-bold shadow-sm hover:bg-slate-50 transition-all"
+                >
+                  关闭
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Top Navbar */}
       <nav className="bg-slate-800 text-white px-6 py-3 flex items-center justify-between shadow-md">
@@ -670,10 +824,16 @@ export default function App() {
                         productName: p.name,
                         compareTime: '刚刚',
                         mainFile: p.files.audit_report.file?.name || '未上传报告',
-                        excelFiles: Object.keys(p.files).filter(k => k !== 'audit_report' && p.files[k as FileType].status === 'ready' && p.files[k as FileType].file !== null),
+                        excelFiles: Object.keys(p.files).filter(k => k !== 'audit_report' && p.files[k as FileType].status === 'ready' && p.files[k as FileType].file !== null).map(k => p.files[k as FileType].file?.name || ''),
                         status: p.isReady ? '正常' : '有差异', // Simple mock status for session products
                         diffCount: 2,
-                        source: 'session'
+                        source: 'session',
+                        details: [
+                          { field: '系统检测', message: '当前会话上传，暂无持久化历史留痕', severity: 'warning' as const }
+                        ],
+                        versions: [
+                          { id: 'V1', time: '刚刚', mainFile: p.files.audit_report.file?.name || '', excelFiles: [], status: '正常' as const, diffCount: 0 }
+                        ]
                       })), ...MOCK_HISTORY].sort((a, b) => a.status === '有差异' ? -1 : 1).map((item) => (
                         <tr key={item.id} className={cn(
                           "hover:bg-slate-50/80 transition-colors group",
@@ -1087,13 +1247,15 @@ export default function App() {
                       ))}
                     </div>
                   </div>
-                  <button 
-                    onClick={() => setView('upload')}
-                    className="flex items-center gap-2 text-sm font-bold text-slate-400 hover:text-primary transition-colors"
-                  >
-                    <RefreshCcw className="w-4 h-4" />
-                    重置比对
-                  </button>
+                  <div className="flex items-center gap-3">
+                    <button 
+                      onClick={() => setView('upload')}
+                      className="flex items-center gap-2 text-sm font-bold text-slate-400 hover:text-primary transition-colors"
+                    >
+                      <RefreshCcw className="w-4 h-4" />
+                      重置比对
+                    </button>
+                  </div>
                 </div>
 
                 {/* Comparison Content */}
