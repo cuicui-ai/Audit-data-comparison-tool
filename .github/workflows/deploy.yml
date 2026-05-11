@@ -26,4 +26,4 @@ jobs:
         run: |
           ossutil config -e oss-cn-hongkong.aliyuncs.com -i ${{ secrets.OSS_ACCESS_KEY_ID }} -k ${{ secrets.OSS_ACCESS_KEY_SECRET }} --language CH
       - name: Sync files to OSS
-        run: ossutil cp ./dist oss://shenji-cuicui.amosyincui.xyz/ --recursive --update
+        run: ossutil cp ./dist oss://shenji-cuicui/ --recursive --update
